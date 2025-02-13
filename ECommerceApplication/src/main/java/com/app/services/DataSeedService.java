@@ -35,7 +35,10 @@ public class DataSeedService {
     @Autowired
     private CartItemRepo cartItemRepo;
     @Autowired
+    private CreditCardRepo creditCardRepo;
+    @Autowired
     private OrderItemRepo orderItemRepo;
+
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -49,6 +52,7 @@ public class DataSeedService {
         seedProducts();
         seedCarts();
         seedOrders();
+        seedCreditCards();
         seedPayments();
         seedCartItems();
         seedOrderItems();
@@ -56,7 +60,7 @@ public class DataSeedService {
 
     private void seedAddresses() {
         if (addressRepo.count() == 0) {
-            List<Address> addresses = IntStream.range(0, 10)
+            List<Address> addresses = IntStream.range(0, 11)
                     .mapToObj(i -> new Address(null,
                             faker.address().streetName(),
                             faker.company().name(),
@@ -75,7 +79,7 @@ public class DataSeedService {
             List<Role> roles = roleRepo.findAll();
             List<Address> addresses = addressRepo.findAll();
 
-            List<User> users = IntStream.range(0, 10).mapToObj(i -> {
+            List<User> users = IntStream.range(0, 11).mapToObj(i -> {
                 User user = new User();
                 String firstName;
                 do {
@@ -113,7 +117,7 @@ public class DataSeedService {
 
     private void seedCategories() {
         if (categoryRepo.count() == 0) {
-            List<Category> categories = IntStream.range(0, 10)
+            List<Category> categories = IntStream.range(0, 11)
                     .mapToObj(i -> {
                         String categoryName;
                         do {
@@ -129,7 +133,7 @@ public class DataSeedService {
     private void seedProducts() {
         if (productRepo.count() == 0) {
             List<Category> categories = categoryRepo.findAll();
-            List<Product> products = IntStream.range(0, 10)
+            List<Product> products = IntStream.range(0, 11)
                     .mapToObj(i -> new Product(null, faker.commerce().productName(), faker.internet().image(),
                             faker.lorem().sentence(), faker.number().numberBetween(10, 100),
                             faker.number().randomDouble(2, 10, 500), faker.number().randomDouble(2, 0, 50),
@@ -164,8 +168,10 @@ public class DataSeedService {
     private void seedPayments() {
         if (paymentRepo.count() == 0) {
             List<Order> orders = orderRepo.findAll();
+            List<CreditCard> creditCards = creditCardRepo.findAll();
             List<Payment> payments = orders.stream().map(order -> {
-                Payment payment = new Payment(null, order, faker.finance().creditCard());
+                CreditCard creditCard = creditCards.get(faker.number().numberBetween(0, creditCards.size()));
+                Payment payment = new Payment(null, order, "Credit Card", creditCard);
                 order.setPayment(payment);
                 return payment;
             }).toList();
@@ -210,6 +216,17 @@ public class DataSeedService {
                     .toList();
 
             orderItemRepo.saveAll(orderItems);
+        }
+    }
+
+    private void seedCreditCards() {
+        if (creditCardRepo.count() == 0) {
+            List<CreditCard> creditCards = IntStream.range(0, 11)
+                    .mapToObj(i -> new CreditCard(null,
+                            faker.numerify("4###############"),
+                            faker.numerify("###")))
+                    .toList();
+            creditCardRepo.saveAll(creditCards);
         }
     }
 }

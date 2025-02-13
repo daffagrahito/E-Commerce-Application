@@ -3,6 +3,7 @@ package com.app.services;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.modelmapper.ModelMapper;
@@ -15,17 +16,20 @@ import org.springframework.stereotype.Service;
 
 import com.app.entites.Cart;
 import com.app.entites.CartItem;
+import com.app.entites.CreditCard;
 import com.app.entites.Order;
 import com.app.entites.OrderItem;
 import com.app.entites.Payment;
 import com.app.entites.Product;
 import com.app.exceptions.APIException;
 import com.app.exceptions.ResourceNotFoundException;
+import com.app.payloads.CreditCardDTO;
 import com.app.payloads.OrderDTO;
 import com.app.payloads.OrderItemDTO;
 import com.app.payloads.OrderResponse;
 import com.app.repositories.CartItemRepo;
 import com.app.repositories.CartRepo;
+import com.app.repositories.CreditCardRepo;
 import com.app.repositories.OrderItemRepo;
 import com.app.repositories.OrderRepo;
 import com.app.repositories.PaymentRepo;
@@ -62,11 +66,13 @@ public class OrderServiceImpl implements OrderService {
 	public CartService cartService;
 
 	@Autowired
+	public CreditCardRepo creditCardRepo;
+
+	@Autowired
 	public ModelMapper modelMapper;
 
 	@Override
-	public OrderDTO placeOrder(String email, Long cartId, String paymentMethod) {
-
+	public OrderDTO placeOrder(String email, Long cartId, String paymentMethod, CreditCardDTO creditCardDTO) {
 		Cart cart = cartRepo.findCartByEmailAndCartId(email, cartId);
 
 		if (cart == null) {
@@ -74,10 +80,8 @@ public class OrderServiceImpl implements OrderService {
 		}
 
 		Order order = new Order();
-
 		order.setEmail(email);
 		order.setOrderDate(LocalDate.now());
-
 		order.setTotalAmount(cart.getTotalPrice());
 		order.setOrderStatus("Order Accepted !");
 
@@ -85,46 +89,59 @@ public class OrderServiceImpl implements OrderService {
 		payment.setOrder(order);
 		payment.setPaymentMethod(paymentMethod);
 
+		// Validasi cardNumber dan cvc
+		if (creditCardDTO.getCardNumber() == null || creditCardDTO.getCardNumber().length() != 16) {
+			throw new APIException("Invalid card number");
+		}
+		if (creditCardDTO.getCvc() == null || creditCardDTO.getCvc().length() != 3) {
+			throw new APIException("Invalid CVC");
+		}
+
+		// Cek apakah kartu kredit sudah ada
+		Optional<CreditCard> existingCreditCard = creditCardRepo.findByCardNumberAndCvc(creditCardDTO.getCardNumber(),
+				creditCardDTO.getCvc());
+		CreditCard creditCard;
+		if (existingCreditCard.isPresent()) {
+			creditCard = existingCreditCard.get();
+		} else {
+			// Simpan data kartu kredit baru
+			creditCard = new CreditCard();
+			creditCard.setCardNumber(creditCardDTO.getCardNumber());
+			creditCard.setCvc(creditCardDTO.getCvc());
+			creditCard = creditCardRepo.save(creditCard);
+		}
+
+		payment.setCreditCard(creditCard);
 		payment = paymentRepo.save(payment);
 
 		order.setPayment(payment);
-
 		Order savedOrder = orderRepo.save(order);
 
 		List<CartItem> cartItems = cart.getCartItems();
-
 		if (cartItems.size() == 0) {
 			throw new APIException("Cart is empty");
 		}
 
 		List<OrderItem> orderItems = new ArrayList<>();
-
 		for (CartItem cartItem : cartItems) {
 			OrderItem orderItem = new OrderItem();
-
 			orderItem.setProduct(cartItem.getProduct());
 			orderItem.setQuantity(cartItem.getQuantity());
 			orderItem.setDiscount(cartItem.getDiscount());
 			orderItem.setOrderedProductPrice(cartItem.getProductPrice());
 			orderItem.setOrder(savedOrder);
-
 			orderItems.add(orderItem);
 		}
 
 		orderItems = orderItemRepo.saveAll(orderItems);
-
 		cart.getCartItems().forEach(item -> {
 			int quantity = item.getQuantity();
-
 			Product product = item.getProduct();
-
 			cartService.deleteProductFromCart(cartId, item.getProduct().getProductId());
-
 			product.setQuantity(product.getQuantity() - quantity);
 		});
 
 		OrderDTO orderDTO = modelMapper.map(savedOrder, OrderDTO.class);
-		
 		orderItems.forEach(item -> orderDTO.getOrderItems().add(modelMapper.map(item, OrderItemDTO.class)));
 
 		return orderDTO;
@@ -170,20 +187,20 @@ public class OrderServiceImpl implements OrderService {
 
 		List<OrderDTO> orderDTOs = orders.stream().map(order -> modelMapper.map(order, OrderDTO.class))
 				.collect(Collectors.toList());
-		
+
 		if (orderDTOs.size() == 0) {
 			throw new APIException("No orders placed yet by the users");
 		}
 
 		OrderResponse orderResponse = new OrderResponse();
-		
+
 		orderResponse.setContent(orderDTOs);
 		orderResponse.setPageNumber(pageOrders.getNumber());
 		orderResponse.setPageSize(pageOrders.getSize());
 		orderResponse.setTotalElements(pageOrders.getTotalElements());
 		orderResponse.setTotalPages(pageOrders.getTotalPages());
 		orderResponse.setLastPage(pageOrders.isLast());
-		
+
 		return orderResponse;
 	}
 
